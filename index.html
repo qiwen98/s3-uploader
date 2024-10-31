@@ -121,34 +121,15 @@
     </div>
 
     <script>
-        // Original API endpoint
-        const ORIGINAL_URL = 'http://3.27.158.39:9200';
-        
-        // CORS Proxy URLs - try different ones if one fails
-        const CORS_PROXIES = [
-            'https://api.allorigins.win/raw?url=',
-            'https://cors-anywhere.herokuapp.com/',
-            'https://cors.zimjs.com/'
-        ];
-
-        let currentProxyIndex = 0;
+        const API_URL = 'http://3.27.158.39:9200/api/v1/upload';
         const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
 
-        function getProxiedUrl() {
-            return CORS_PROXIES[currentProxyIndex] + encodeURIComponent(ORIGINAL_URL + '/api/v1/upload');
-        }
-
-        function tryNextProxy() {
-            currentProxyIndex = (currentProxyIndex + 1) % CORS_PROXIES.length;
-            return getProxiedUrl();
-        }
-
-        // Rest of the UI element selections remain the same
+        // UI Elements
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
         const fileList = document.getElementById('fileList');
 
-        // Previous event listeners remain the same
+        // Event Listeners
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, preventDefaults, false);
             document.body.addEventListener(eventName, preventDefaults, false);
@@ -165,7 +146,7 @@
         dropZone.addEventListener('drop', handleDrop, false);
         fileInput.addEventListener('change', handleFiles, false);
 
-        // Previous utility functions remain the same
+        // Utility Functions
         function preventDefaults (e) {
             e.preventDefault();
             e.stopPropagation();
@@ -203,66 +184,98 @@
                         <div class="progress"></div>
                     </div>
                     <div class="message"></div>
+                    <div class="debug-info"></div>
                 </div>
             `;
             fileList.insertBefore(fileItem, fileList.firstChild);
             return fileItem;
         }
 
-        async function uploadFile(file, retryCount = 0) {
+        async function uploadFile(file) {
+            const fileItem = createFileItem(file);
+            const progressBar = fileItem.querySelector('.progress');
+            const status = fileItem.querySelector('.status');
+            const message = fileItem.querySelector('.message');
+            const debugInfo = fileItem.querySelector('.debug-info');
+
             if (file.size > MAX_FILE_SIZE) {
-                const fileItem = createFileItem(file);
-                const status = fileItem.querySelector('.status');
-                const message = fileItem.querySelector('.message');
                 status.textContent = 'Error';
                 message.className = 'error-message';
                 message.textContent = 'File size exceeds 5MB limit';
                 return;
             }
 
-            const fileItem = createFileItem(file);
-            const progressBar = fileItem.querySelector('.progress');
-            const status = fileItem.querySelector('.status');
-            const message = fileItem.querySelector('.message');
-
             const formData = new FormData();
             formData.append('file', file);
 
             try {
-                const response = await fetch(getProxiedUrl(), {
-                    method: 'POST',
-                    body: formData,
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest',
-                    }
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    status.textContent = 'Completed';
-                    message.className = 'success-message';
-                    message.textContent = `File uploaded successfully. URL: ${data.url || 'File uploaded'}`;
-                    progressBar.style.width = '100%';
-                    progressBar.style.backgroundColor = '#28a745';
-                } else {
-                    throw new Error(`Upload failed: ${response.status}`);
-                }
-            } catch (error) {
-                console.error('Upload failed:', error);
+                status.textContent = 'Uploading...';
                 
-                // Try next proxy if available and under retry limit
-                if (retryCount < CORS_PROXIES.length - 1) {
-                    status.textContent = 'Retrying...';
-                    message.className = 'error-message';
-                    message.textContent = 'Upload failed. Trying alternative route...';
-                    tryNextProxy();
-                    await uploadFile(file, retryCount + 1);
-                } else {
+                // Log FormData contents for debugging
+                for (let pair of formData.entries()) {
+                    console.log(pair[0], pair[1]);
+                }
+
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', API_URL);
+                
+                // Setup upload progress handler
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        const percentComplete = (e.loaded / e.total) * 100;
+                        progressBar.style.width = percentComplete + '%';
+                        status.textContent = `Uploading: ${Math.round(percentComplete)}%`;
+                    }
+                };
+
+                // Setup completion handler
+                xhr.onload = function() {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            status.textContent = 'Completed';
+                            message.className = 'success-message';
+                            message.textContent = `File uploaded successfully. URL: ${response.url || 'File uploaded'}`;
+                            progressBar.style.backgroundColor = '#28a745';
+                        } else {
+                            throw new Error(response.message || 'Upload failed');
+                        }
+                    } catch (error) {
+                        status.textContent = 'Failed';
+                        message.className = 'error-message';
+                        message.textContent = `Upload failed: ${error.message}`;
+                        progressBar.style.backgroundColor = '#dc3545';
+                        
+                        // Show debug info
+                        debugInfo.style.display = 'block';
+                        debugInfo.textContent = `Status: ${xhr.status}\nResponse: ${xhr.responseText}`;
+                    }
+                };
+
+                // Setup error handler
+                xhr.onerror = function(e) {
                     status.textContent = 'Failed';
                     message.className = 'error-message';
-                    message.textContent = `Upload failed: ${error.message}`;
+                    message.textContent = 'Network error occurred';
                     progressBar.style.backgroundColor = '#dc3545';
-                }
+                    
+                    // Show debug info
+                    debugInfo.style.display = 'block';
+                    debugInfo.textContent = `Network Error: ${e.type}`;
+                };
+
+                // Send the request
+                xhr.send(formData);
+
+            } catch (error) {
+                status.textContent = 'Failed';
+                message.className = 'error-message';
+                message.textContent = `Upload failed: ${error.message}`;
+                progressBar.style.backgroundColor = '#dc3545';
+                
+                // Show debug info
+                debugInfo.style.display = 'block';
+                debugInfo.textContent = `Error: ${error.message}`;
             }
         }
 
