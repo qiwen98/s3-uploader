@@ -129,7 +129,7 @@
         const fileInput = document.getElementById('fileInput');
         const fileList = document.getElementById('fileList');
 
-        // Event Listeners
+        // Previous event listeners remain same
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, preventDefaults, false);
             document.body.addEventListener(eventName, preventDefaults, false);
@@ -146,7 +146,7 @@
         dropZone.addEventListener('drop', handleDrop, false);
         fileInput.addEventListener('change', handleFiles, false);
 
-        // Utility Functions
+        // Previous utility functions remain same
         function preventDefaults (e) {
             e.preventDefault();
             e.stopPropagation();
@@ -211,13 +211,12 @@
             try {
                 status.textContent = 'Uploading...';
                 
-                // Log FormData contents for debugging
-                for (let pair of formData.entries()) {
-                    console.log(pair[0], pair[1]);
-                }
-
                 const xhr = new XMLHttpRequest();
                 xhr.open('POST', API_URL);
+
+                // Add headers to handle CORS
+                xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                // Don't set Content-Type header, let the browser set it with the boundary
                 
                 // Setup upload progress handler
                 xhr.upload.onprogress = (e) => {
@@ -230,38 +229,51 @@
 
                 // Setup completion handler
                 xhr.onload = function() {
-                    try {
-                        const response = JSON.parse(xhr.responseText);
-                        if (xhr.status >= 200 && xhr.status < 300) {
+                    debugInfo.style.display = 'block';
+                    debugInfo.textContent = `Status: ${xhr.status}\nResponse: ${xhr.responseText}`;
+
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        try {
+                            const response = JSON.parse(xhr.responseText);
                             status.textContent = 'Completed';
                             message.className = 'success-message';
                             message.textContent = `File uploaded successfully. URL: ${response.url || 'File uploaded'}`;
                             progressBar.style.backgroundColor = '#28a745';
-                        } else {
-                            throw new Error(response.message || 'Upload failed');
+                        } catch (e) {
+                            // If response isn't JSON but status is success
+                            status.textContent = 'Completed';
+                            message.className = 'success-message';
+                            message.textContent = 'File uploaded successfully';
+                            progressBar.style.backgroundColor = '#28a745';
                         }
-                    } catch (error) {
+                    } else {
                         status.textContent = 'Failed';
                         message.className = 'error-message';
-                        message.textContent = `Upload failed: ${error.message}`;
+                        message.textContent = 'Upload failed: Server error';
                         progressBar.style.backgroundColor = '#dc3545';
-                        
-                        // Show debug info
-                        debugInfo.style.display = 'block';
-                        debugInfo.textContent = `Status: ${xhr.status}\nResponse: ${xhr.responseText}`;
                     }
                 };
 
                 // Setup error handler
                 xhr.onerror = function(e) {
+                    debugInfo.style.display = 'block';
+                    debugInfo.textContent = `Network Error: ${e.type}\nMake sure the server has CORS enabled.`;
+                    
                     status.textContent = 'Failed';
                     message.className = 'error-message';
-                    message.textContent = 'Network error occurred';
+                    message.textContent = 'Network error: CORS issue or server unavailable';
                     progressBar.style.backgroundColor = '#dc3545';
                     
-                    // Show debug info
-                    debugInfo.style.display = 'block';
-                    debugInfo.textContent = `Network Error: ${e.type}`;
+                    // Show instructions for server configuration
+                    const corsMessage = document.createElement('div');
+                    corsMessage.className = 'error-message';
+                    corsMessage.innerHTML = `
+                        Server needs these CORS headers:<br>
+                        Access-Control-Allow-Origin: https://qiwen98.github.io<br>
+                        Access-Control-Allow-Methods: POST<br>
+                        Access-Control-Allow-Headers: X-Requested-With
+                    `;
+                    message.appendChild(corsMessage);
                 };
 
                 // Send the request
@@ -273,7 +285,6 @@
                 message.textContent = `Upload failed: ${error.message}`;
                 progressBar.style.backgroundColor = '#dc3545';
                 
-                // Show debug info
                 debugInfo.style.display = 'block';
                 debugInfo.textContent = `Error: ${error.message}`;
             }
