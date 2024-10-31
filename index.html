@@ -1,12 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
-<!-- Previous head and style sections remain the same -->
+<!-- Previous head and style sections remain identical -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>S3 File Upload System</title>
+    <!-- Previous styles remain identical -->
     <style>
-        /* Previous styles remain the same */
+        /* Previous styles remain identical */
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             max-width: 800px;
@@ -120,22 +121,27 @@
     </div>
 
     <script>
-        // Use HTTPS protocol for the backend URL
-        const BACKEND_URL = 'https://3.27.158.39:9200';
+        // Original API endpoint
+        const ORIGINAL_URL = 'http://3.27.158.39:9200';
+        
+        // CORS Proxy URLs - try different ones if one fails
+        const CORS_PROXIES = [
+            'https://api.allorigins.win/raw?url=',
+            'https://cors-anywhere.herokuapp.com/',
+            'https://cors.zimjs.com/'
+        ];
+
+        let currentProxyIndex = 0;
         const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
 
-        // Add protocol check and URL adjustment
-        function getSecureUrl() {
-            // If the page is served over HTTPS, ensure we use HTTPS for the API
-            if (window.location.protocol === 'https:') {
-                // Return HTTPS URL
-                return 'https://3.27.158.39:9200';
-            }
-            // If page is served over HTTP, we can use HTTP
-            return 'http://3.27.158.39:9200';
+        function getProxiedUrl() {
+            return CORS_PROXIES[currentProxyIndex] + encodeURIComponent(ORIGINAL_URL + '/api/v1/upload');
         }
 
-        const API_URL = getSecureUrl();
+        function tryNextProxy() {
+            currentProxyIndex = (currentProxyIndex + 1) % CORS_PROXIES.length;
+            return getProxiedUrl();
+        }
 
         // Rest of the UI element selections remain the same
         const dropZone = document.getElementById('dropZone');
@@ -203,7 +209,7 @@
             return fileItem;
         }
 
-        async function uploadFile(file) {
+        async function uploadFile(file, retryCount = 0) {
             if (file.size > MAX_FILE_SIZE) {
                 const fileItem = createFileItem(file);
                 const status = fileItem.querySelector('.status');
@@ -223,44 +229,40 @@
             formData.append('file', file);
 
             try {
-                const xhr = new XMLHttpRequest();
-                xhr.open('POST', `${API_URL}/api/v1/upload`, true);
-
-                xhr.upload.onprogress = (e) => {
-                    if (e.lengthComputable) {
-                        const percentComplete = (e.loaded / e.total) * 100;
-                        progressBar.style.width = percentComplete + '%';
-                        status.textContent = `Uploading: ${Math.round(percentComplete)}%`;
+                const response = await fetch(getProxiedUrl(), {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
                     }
-                };
+                });
 
-                xhr.onload = function() {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        const response = JSON.parse(xhr.responseText);
-                        status.textContent = 'Completed';
-                        message.className = 'success-message';
-                        message.textContent = `File uploaded successfully. URL: ${response.url || 'File uploaded'}`;
-                        progressBar.style.backgroundColor = '#28a745';
-                    } else {
-                        throw new Error(`Upload failed: Server returned ${xhr.status}`);
-                    }
-                };
-
-                xhr.onerror = function() {
-                    status.textContent = 'Failed';
-                    message.className = 'error-message';
-                    message.textContent = 'Upload failed. Please check if the server supports HTTPS.';
-                    progressBar.style.backgroundColor = '#dc3545';
-                };
-
-                xhr.send(formData);
-
+                if (response.ok) {
+                    const data = await response.json();
+                    status.textContent = 'Completed';
+                    message.className = 'success-message';
+                    message.textContent = `File uploaded successfully. URL: ${data.url || 'File uploaded'}`;
+                    progressBar.style.width = '100%';
+                    progressBar.style.backgroundColor = '#28a745';
+                } else {
+                    throw new Error(`Upload failed: ${response.status}`);
+                }
             } catch (error) {
                 console.error('Upload failed:', error);
-                status.textContent = 'Failed';
-                message.className = 'error-message';
-                message.textContent = `Upload failed: ${error.message}`;
-                progressBar.style.backgroundColor = '#dc3545';
+                
+                // Try next proxy if available and under retry limit
+                if (retryCount < CORS_PROXIES.length - 1) {
+                    status.textContent = 'Retrying...';
+                    message.className = 'error-message';
+                    message.textContent = 'Upload failed. Trying alternative route...';
+                    tryNextProxy();
+                    await uploadFile(file, retryCount + 1);
+                } else {
+                    status.textContent = 'Failed';
+                    message.className = 'error-message';
+                    message.textContent = `Upload failed: ${error.message}`;
+                    progressBar.style.backgroundColor = '#dc3545';
+                }
             }
         }
 
