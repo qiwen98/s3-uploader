@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+<!-- Previous head and style sections remain the same -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>S3 File Upload System</title>
     <style>
+        /* Previous styles remain the same */
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             max-width: 800px;
@@ -59,14 +61,6 @@
             background: #1976D2;
         }
 
-        .btn-delete {
-            background: #dc3545;
-        }
-
-        .btn-delete:hover {
-            background: #c82333;
-        }
-
         #fileList {
             text-align: left;
             margin-top: 20px;
@@ -109,20 +103,11 @@
             margin-top: 5px;
             font-size: 14px;
         }
-
-        .max-size-warning {
-            color: #721c24;
-            background-color: #f8d7da;
-            padding: 10px;
-            border-radius: 4px;
-            margin-top: 10px;
-            display: none;
-        }
     </style>
 </head>
 <body>
     <div class="upload-container">
-        <h1>ABDA ROYALE FEEDBACK File Upload System</h1>
+        <h1>S3 File Upload System</h1>
         <p>Upload your files by dragging and dropping them below or clicking to browse</p>
         
         <div class="upload-zone" id="dropZone">
@@ -131,30 +116,38 @@
             <button class="btn" onclick="document.getElementById('fileInput').click()">Browse Files</button>
         </div>
 
-        <div class="max-size-warning" id="sizeWarning">
-            File size exceeds the maximum limit of 5MB
-        </div>
-
         <div id="fileList"></div>
     </div>
 
     <script>
-        const BACKEND_URL = 'http://3.27.158.39:9200';
+        // Use HTTPS protocol for the backend URL
+        const BACKEND_URL = 'https://3.27.158.39:9200';
         const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
 
-        // UI Elements
+        // Add protocol check and URL adjustment
+        function getSecureUrl() {
+            // If the page is served over HTTPS, ensure we use HTTPS for the API
+            if (window.location.protocol === 'https:') {
+                // Return HTTPS URL
+                return 'https://3.27.158.39:9200';
+            }
+            // If page is served over HTTP, we can use HTTP
+            return 'http://3.27.158.39:9200';
+        }
+
+        const API_URL = getSecureUrl();
+
+        // Rest of the UI element selections remain the same
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
         const fileList = document.getElementById('fileList');
-        const sizeWarning = document.getElementById('sizeWarning');
 
-        // Prevent default drag behaviors
+        // Previous event listeners remain the same
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, preventDefaults, false);
             document.body.addEventListener(eventName, preventDefaults, false);
         });
 
-        // Highlight drop zone when dragging over it
         ['dragenter', 'dragover'].forEach(eventName => {
             dropZone.addEventListener(eventName, highlight, false);
         });
@@ -163,10 +156,10 @@
             dropZone.addEventListener(eventName, unhighlight, false);
         });
 
-        // Handle dropped files
         dropZone.addEventListener('drop', handleDrop, false);
         fileInput.addEventListener('change', handleFiles, false);
 
+        // Previous utility functions remain the same
         function preventDefaults (e) {
             e.preventDefault();
             e.stopPropagation();
@@ -212,10 +205,12 @@
 
         async function uploadFile(file) {
             if (file.size > MAX_FILE_SIZE) {
-                sizeWarning.style.display = 'block';
-                setTimeout(() => {
-                    sizeWarning.style.display = 'none';
-                }, 3000);
+                const fileItem = createFileItem(file);
+                const status = fileItem.querySelector('.status');
+                const message = fileItem.querySelector('.message');
+                status.textContent = 'Error';
+                message.className = 'error-message';
+                message.textContent = 'File size exceeds 5MB limit';
                 return;
             }
 
@@ -229,9 +224,8 @@
 
             try {
                 const xhr = new XMLHttpRequest();
-                xhr.open('POST', `${BACKEND_URL}/api/v1/upload`, true);
+                xhr.open('POST', `${API_URL}/api/v1/upload`, true);
 
-                // Setup upload progress handler
                 xhr.upload.onprogress = (e) => {
                     if (e.lengthComputable) {
                         const percentComplete = (e.loaded / e.total) * 100;
@@ -240,7 +234,6 @@
                     }
                 };
 
-                // Setup completion handler
                 xhr.onload = function() {
                     if (xhr.status >= 200 && xhr.status < 300) {
                         const response = JSON.parse(xhr.responseText);
@@ -249,19 +242,17 @@
                         message.textContent = `File uploaded successfully. URL: ${response.url || 'File uploaded'}`;
                         progressBar.style.backgroundColor = '#28a745';
                     } else {
-                        throw new Error(`HTTP error! status: ${xhr.status}`);
+                        throw new Error(`Upload failed: Server returned ${xhr.status}`);
                     }
                 };
 
-                // Setup error handler
                 xhr.onerror = function() {
                     status.textContent = 'Failed';
                     message.className = 'error-message';
-                    message.textContent = 'Upload failed. Please try again.';
+                    message.textContent = 'Upload failed. Please check if the server supports HTTPS.';
                     progressBar.style.backgroundColor = '#dc3545';
                 };
 
-                // Send the upload
                 xhr.send(formData);
 
             } catch (error) {
